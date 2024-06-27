@@ -14,7 +14,7 @@ import (
 // initApp initializes the Fiber app and returns it
 func initApp() *fiber.App {
 	// Load environment variables
-	if err := godotenv.Load("./.env"); err != nil {
+	if err := godotenv.Load(".env"); err != nil {
 		log.Fatalf("Error loading .env file: %v", err)
 	}
 
@@ -29,12 +29,12 @@ func initApp() *fiber.App {
 			ID:          "strem.go.beta",
 			Description: "Random Golang version on stremio Addon",
 			Name:        "GoDon",
-			Resources:   []string{"stream"},
+			Resources:   []string{"catalog", "stream"},
 			Version:     "1.0.9",
 			Types:       []string{"movie", "series", "anime"},
 			Logo:        "https://upload.wikimedia.org/wikipedia/commons/2/23/Golang.png",
 			IdPrefixes:  []string{"tt", "kitsu"},
-			Catalogs:    []string{},
+			Catalogs:    []string{"https://your-addon-url/catalog.json"},
 		}
 
 		response, err := json.Marshal(manifest)
