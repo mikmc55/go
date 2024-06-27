@@ -19,15 +19,16 @@ func initApp() *fiber.App {
 
 	app.Get("/manifest.json", func(c *fiber.Ctx) error {
 		manifest := types.StreamManifest{
-			ID:          "strem.go.beta",
-			Description: "Random Golang version on stremio Addon",
+			ID:          "addon_id",
+			Version:     "1.0.0",
 			Name:        "GoDon",
+			Description: "Random Golang version on stremio Addon",
 			Resources:   []string{"stream"},
-			Version:     "1.0.9",
 			Types:       []string{"movie", "series", "anime"},
-			Logo:        "https://upload.wikimedia.org/wikipedia/commons/2/23/Golang.png",
-			IdPrefixes:  []string{"tt", "kitsu"},
+			IDPrefixes:  []string{"tt", "kitsu"},
 			Catalogs:    []string{},
+			Logo:        "https://upload.wikimedia.org/wikipedia/commons/2/23/Golang.png",
+			ContactEmail: "your-email@example.com", // Replace with your contact email
 		}
 
 		response, err := json.Marshal(manifest)
