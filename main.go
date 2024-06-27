@@ -6,12 +6,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/anacrolix/torrent"
 	"github.com/daniwalter001/jackett_fiber/types"
@@ -27,30 +24,28 @@ func initApp() *fiber.App {
 	enc.SetEscapeHTML(false)
 	ctx := context.Background()
 
-	errDot := godotenv.Load("./.env")
-	if errDot != nil {
-		log.Fatalln("Error loading .env file")
+	err := godotenv.Load("./.env")
+	if err != nil {
+		log.Fatalf("Error loading .env file: %v", err)
 	}
 
-	//create redis client instance
+	// Create Redis client instance
 	rdClient := RedisClient()
-	status, errS := rdClient.Ping(ctx).Result()
-	if errS != nil {
-		fmt.Print("Error: ")
-		fmt.Println(errS.Error())
+	status, err := rdClient.Ping(ctx).Result()
+	if err != nil {
+		log.Printf("Warning: Error connecting to Redis: %v", err)
 	} else {
-		fmt.Print("OK redis: ")
-		fmt.Println(status)
+		log.Printf("Connected to Redis: %s", status)
 	}
 
 	app := fiber.New()
 
 	app.Get("/", func(c *fiber.Ctx) error {
-		return c.Status(200).SendString("Working")
+		return c.SendStatus(fiber.StatusOK)
 	})
 
 	app.Get("/manifest.json", func(c *fiber.Ctx) error {
-		a := types.StreamManifest{
+		manifest := types.StreamManifest{
 			ID:          "strem.go.beta",
 			Description: "Random Golang version on stremio Addon",
 			Name:        "GoDon",
@@ -62,16 +57,13 @@ func initApp() *fiber.App {
 			Catalogs:    []string{},
 		}
 
-		u, err := json.Marshal(a)
+		response, err := json.Marshal(manifest)
 		if err != nil {
-			return c.SendStatus(fiber.StatusOK)
+			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 		}
 
-		c.Set("Access-Control-Allow-Origin", "*")
-		c.Set("Access-Control-Allow-Headers", "*")
 		c.Set("Content-Type", "application/json")
-
-		return c.Status(fiber.StatusOK).SendString(string(u))
+		return c.Status(fiber.StatusOK).Send(response)
 	})
 
 	app.Get("/stream/:type/:id.json", func(c *fiber.Ctx) error {
@@ -79,33 +71,19 @@ func initApp() *fiber.App {
 		c.Set("Access-Control-Allow-Headers", "*")
 		c.Set("Content-Type", "application/json")
 
-		fmt.Printf("Id: %s\n", c.Params("id"))
-		fmt.Printf("Type: %s\n", c.Params("type"))
-
-		var s, e, abs_season, abs_episode int
-		var tt string
-		abs := "false"
-
 		id := c.Params("id")
 		id = strings.ReplaceAll(id, "%3A", ":")
 
-		//Reading the cache
 		streams, err := rdClient.JSONGet(ctx, id, "$").Result()
 		if err == nil && streams != "" {
-			fmt.Printf("Sending that %s shit from cache\n", id)
 			var cachedStreams []types.StreamMeta
-			errJson := json.Unmarshal([]byte(streams), &cachedStreams)
-			if errJson != nil {
-				fmt.Println(errJson)
-				return c.Status(fiber.StatusNotFound).SendString("lol")
-			} else if len(cachedStreams) > 0 {
-				fmt.Printf("Sent from cache %s\n", id)
+			err = json.Unmarshal([]byte(streams), &cachedStreams)
+			if err == nil && len(cachedStreams) > 0 {
 				return c.Status(fiber.StatusOK).JSON(cachedStreams[len(cachedStreams)-1])
 			}
 		}
 
 		type_ := c.Params("type")
-
 		var tmp []string
 
 		if strings.Contains(id, "kitsu") {
@@ -114,15 +92,16 @@ func initApp() *fiber.App {
 			tmp = strings.Split(id, ":")
 		}
 
-		fmt.Println(tmp)
+		var s, e, absSeason, absEpisode int
+		var abs string
 
-		tt = tmp[0]
+		tt := tmp[0]
 		if len(tmp) > 1 {
 			s, _ = strconv.Atoi(tmp[1])
 			e, _ = strconv.Atoi(tmp[2])
 			if len(tmp) > 3 {
-				abs_season, _ = strconv.Atoi(tmp[3])
-				abs_episode, _ = strconv.Atoi(tmp[4])
+				absSeason, _ = strconv.Atoi(tmp[3])
+				absEpisode, _ = strconv.Atoi(tmp[4])
 				abs = tmp[5]
 			}
 		}
@@ -130,30 +109,25 @@ func initApp() *fiber.App {
 		name, year := getMeta(tt, type_)
 
 		var results []types.ItemsParsed
+		var wg sync.WaitGroup
 
-		wg := sync.WaitGroup{}
-		l := 5
-		if type_ == "series" {
-			if abs == "true" {
-				l = l + 2
-			}
-			if s == 1 {
-				l = l + 2
-			}
-		} else if type_ == "movie" {
-			l = 1
-		}
-		fmt.Printf("Requests: %d\n", l)
-
-		wg.Add(l)
-
-		if type_ == "movie" {
+		switch type_ {
+		case "movie":
+			wg.Add(1)
 			go func() {
 				defer wg.Done()
 				results = append(results, fetchTorrent(fmt.Sprintf("%s %s", name, year), type_)...)
 			}()
-		} else {
+		case "series":
+			l := 5
+			if abs == "true" {
+				l += 2
+			}
+			if s == 1 {
+				l += 2
+			}
 
+			wg.Add(l)
 			go func() {
 				defer wg.Done()
 				results = append(results, fetchTorrent(fmt.Sprintf("%s S%02d", name, s), type_)...)
@@ -190,113 +164,83 @@ func initApp() *fiber.App {
 			if abs == "true" {
 				go func() {
 					defer wg.Done()
-					results = append(results, fetchTorrent(fmt.Sprintf("%s E%03d", name, abs_episode), type_)...)
+					results = append(results, fetchTorrent(fmt.Sprintf("%s E%03d", name, absEpisode), type_)...)
 				}()
 
 				go func() {
 					defer wg.Done()
-					results = append(results, fetchTorrent(fmt.Sprintf("%s %03d", name, abs_episode), type_)...)
+					results = append(results, fetchTorrent(fmt.Sprintf("%s %03d", name, absEpisode), type_)...)
 				}()
 			}
 		}
 
 		wg.Wait()
 
+		results = removeDuplicates(results)
 		sort.Slice(results, func(i, j int) bool {
 			iv, _ := strconv.Atoi(results[i].Peers)
 			jv, _ := strconv.Atoi(results[j].Peers)
 			return iv > jv
 		})
 
-		results = removeDuplicates(results)
-
-		fmt.Printf("Results:%d\n", len(results))
-
 		maxRes, _ := strconv.Atoi(os.Getenv("MAX_RES"))
-
 		if len(results) > maxRes {
 			results = results[:maxRes]
 		}
 
-		fmt.Printf("Retenus:%d\n", len(results))
-
 		var parsedTorrentFiles []types.ItemsParsed
-
-		wg = sync.WaitGroup{}
-		wg.Add(len(results))
-
-		for i := 0; i < len(results); i++ {
-			go func(item types.ItemsParsed) {
-				defer wg.Done()
-				r := item
-				if strings.Contains(item.MagnetURI, "magnet:?xt") {
-					r = readTorrentFromMagnet(item)
-				} else {
-					r = readTorrent(item)
-				}
-
-				if len(r.TorrentData) != 0 {
-					parsedTorrentFiles = append(parsedTorrentFiles, r)
-				}
-			}(results[i])
-		}
-		wg.Wait()
-
 		var parsedSuitableTorrentFiles []torrent.File
-		var parsedSuitableTorrentFilesIndex = make(map[string]int, 0)
+		parsedSuitableTorrentFilesIndex := make(map[string]int)
 
-		for index, el := range parsedTorrentFiles {
-			parsedSuitableTorrentFiles = make([]torrent.File, 0)
-
-			for _index, ell := range el.TorrentData {
-				lower := strings.ToLower(ell.DisplayPath())
-
-				if !isVideo(ell.DisplayPath()) {
+		for _, item := range results {
+			parsedSuitableTorrentFiles = []torrent.File{}
+			for idx, file := range item.TorrentData {
+				if !isVideo(file.DisplayPath()) {
 					continue
 				}
 
 				if type_ == "movie" {
-					parsedSuitableTorrentFiles = append(parsedSuitableTorrentFiles, ell)
-					parsedSuitableTorrentFilesIndex[ell.DisplayPath()] = _index + 1
-
+					parsedSuitableTorrentFiles = append(parsedSuitableTorrentFiles, file)
+					parsedSuitableTorrentFilesIndex[file.DisplayPath()] = idx + 1
 					break
-				} else {
-					if isVideo(ell.DisplayPath()) && (containEandS(lower, strconv.Itoa(s), strconv.Itoa(e), abs == "true", strconv.Itoa(abs_season), strconv.Itoa(abs_episode)) ||
-						containE_S(lower, strconv.Itoa(s), strconv.Itoa(e), abs == "true", strconv.Itoa(abs_season), strconv.Itoa(abs_episode)) ||
-						(s == 1 && (containsAbsoluteE(lower, strconv.Itoa(s), strconv.Itoa(e), true, strconv.Itoa(s), strconv.Itoa(e)) ||
-							containsAbsoluteE_(lower, strconv.Itoa(s), strconv.Itoa(e), true, strconv.Itoa(s), strconv.Itoa(e)))) ||
-						(((abs == "true" && containsAbsoluteE(lower, strconv.Itoa(s), strconv.Itoa(e), true, strconv.Itoa(abs_season), strconv.Itoa(abs_episode))) ||
-							(abs == "true" && containsAbsoluteE_(lower, strconv.Itoa(s), strconv.Itoa(e), true, strconv.Itoa(abs_season), strconv.Itoa(abs_episode)))))) {
-						parsedSuitableTorrentFiles = append(parsedSuitableTorrentFiles, ell)
-						parsedSuitableTorrentFilesIndex[ell.DisplayPath()] = _index + 1
+				}
 
-						break
-					}
+				lower := strings.ToLower(file.DisplayPath())
+
+				if containEandS(lower, strconv.Itoa(s), strconv.Itoa(e), abs == "true", strconv.Itoa(absSeason), strconv.Itoa(absEpisode)) ||
+					containE_S(lower, strconv.Itoa(s), strconv.Itoa(e), abs == "true", strconv.Itoa(absSeason), strconv.Itoa(absEpisode)) ||
+					(s == 1 && (containsAbsoluteE(lower, strconv.Itoa(s), strconv.Itoa(e), true, strconv.Itoa(s), strconv.Itoa(e)) ||
+						containsAbsoluteE_(lower, strconv.Itoa(s), strconv.Itoa(e), true, strconv.Itoa(s), strconv.Itoa(e)))) ||
+					((abs == "true" && containsAbsoluteE(lower, strconv.Itoa(s), strconv.Itoa(e), true, strconv.Itoa(absSeason), strconv.Itoa(absEpisode))) ||
+						(abs == "true" && containsAbsoluteE_(lower, strconv.Itoa(s), strconv.Itoa(e), true, strconv.Itoa(absSeason), strconv.Itoa(absEpisode)))) {
+					parsedSuitableTorrentFiles = append(parsedSuitableTorrentFiles, file)
+					parsedSuitableTorrentFilesIndex[file.DisplayPath()] = idx + 1
+					break
 				}
 			}
-
-			parsedTorrentFiles[index].TorrentData = parsedSuitableTorrentFiles
+			item.TorrentData = parsedSuitableTorrentFiles
+			parsedTorrentFiles = append(parsedTorrentFiles, item)
 		}
 
-		fmt.Printf("Results filtered:%d\n", len(parsedTorrentFiles))
-
-		var streams_ = make([]types.StreamMeta, 0)
-		for _, element := range parsedTorrentFiles {
-			if len(element.TorrentData) > 0 {
-				for _, el := range element.TorrentData {
-					torrent := types.StreamMeta{Title: element.Title, InfoHash: element.InfoHash, FileIdx: parsedSuitableTorrentFilesIndex[el.DisplayPath()], BehaviorHints: types.BehaviorHints{BingeGroup: fmt.Sprintf("group-%s", tt), CountryWhitelist: []string{"en"}}}
-					streams_ = append(streams_, torrent)
+		var streams []types.StreamMeta
+		for _, item := range parsedTorrentFiles {
+			for _, file := range item.TorrentData {
+				torrent := types.StreamMeta{
+					Title:         item.Title,
+					InfoHash:      item.InfoHash,
+					FileIdx:       parsedSuitableTorrentFilesIndex[file.DisplayPath()],
+					BehaviorHints: types.BehaviorHints{BingeGroup: fmt.Sprintf("group-%s", tt), CountryWhitelist: []string{"en"}},
 				}
+				streams = append(streams, torrent)
 			}
 		}
 
-		//Updating the cache
-		errCache := rdClient.JSONSet(ctx, id, "$", streams_).Err()
-		if errCache != nil {
-			fmt.Println(errCache)
+		err = rdClient.JSONSet(ctx, id, "$", streams).Err()
+		if err != nil {
+			log.Printf("Error updating cache: %v", err)
 		}
 
-		return c.Status(fiber.StatusOK).JSON(streams_[len(streams_)-1])
+		return c.Status(fiber.StatusOK).JSON(streams[len(streams)-1])
 	})
 
 	return app
@@ -304,3 +248,7 @@ func initApp() *fiber.App {
 
 // Handler is the exported function for Vercel
 var Handler = adaptor.FiberApp(initApp())
+
+func main() {
+	Handler.Listen(":3000")
+}
