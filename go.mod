@@ -3,14 +3,15 @@ module github.com/daniwalter001/jackett_fiber
 // +heroku goVersion go1.21.0
 go 1.22.0
 
-require github.com/gofiber/fiber/v2 v2.52.4
+require (
+	github.com/gofiber/fiber/v2 v2.52.4
+	github.com/gofiber/adaptor/v2 v2.5.0
+	github.com/joho/godotenv v1.4.0
+)
 
 require (
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-)
-
-require (
 	github.com/RoaringBitmap/roaring v1.2.3 // indirect
 	github.com/ajwerner/btree v0.0.0-20211221152037-f427b3e689c0 // indirect
 	github.com/alecthomas/atomic v0.1.0-alpha2 // indirect
