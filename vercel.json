@@ -1,4 +1,5 @@
 {
+  "version": 2,
   "builds": [
     {
       "src": "api/index.go",
@@ -6,9 +7,7 @@
     }
   ],
   "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.go"
-    }
+    { "handle": "filesystem" },
+    { "src": "/api/.*", "dest": "/api/index" }
   ]
 }
