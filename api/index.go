@@ -6,12 +6,19 @@ import (
 
 	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/fiber/v2"
+	"github.com/joho/godotenv"
 	"github.com/daniwalter001/jackett_fiber/types"
+	"log"
 )
 
 // initApp initializes the Fiber app and returns it
 func initApp() *fiber.App {
 	app := fiber.New()
+
+	// Load environment variables
+	if err := godotenv.Load("./.env"); err != nil {
+		log.Fatalf("Error loading .env file: %v", err)
+	}
 
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.Status(http.StatusOK).SendString("Working")
