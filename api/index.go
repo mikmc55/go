@@ -1,16 +1,13 @@
 package handler
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"log"
 	"net/http"
-	"os"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/adaptor/v2"
+	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
+	"log"
+	"encoding/json"
 	"github.com/daniwalter001/jackett_fiber/types"
 )
 
