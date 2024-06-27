@@ -4,11 +4,9 @@ go 1.22
 
 require (
     github.com/gofiber/fiber/v2 v2.52.4
-    github.com/gofiber/adaptor/v2 v2.5.0
+    github.com/gofiber/adaptor/v2 v2.2.0
     github.com/joho/godotenv v1.5.1
 )
-
-replace github.com/joho/godotenv v1.5.1 => github.com/joho/godotenv v1.4.0
 
 require (
     github.com/cespare/xxhash/v2 v2.2.0 // indirect
