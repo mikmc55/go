@@ -14,9 +14,11 @@ import (
 // initApp initializes the Fiber app and returns it
 func initApp() *fiber.App {
 	// Load environment variables
+	log.Println("Loading .env file...")
 	if err := godotenv.Load("./.env"); err != nil {
 		log.Fatalf("Error loading .env file: %v", err)
 	}
+	log.Println(".env file loaded successfully.")
 
 	app := fiber.New()
 
