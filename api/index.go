@@ -2,23 +2,23 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
 	"github.com/daniwalter001/jackett_fiber/types"
-	"log"
 )
 
 // initApp initializes the Fiber app and returns it
 func initApp() *fiber.App {
-	app := fiber.New()
-
 	// Load environment variables
 	if err := godotenv.Load("./.env"); err != nil {
 		log.Fatalf("Error loading .env file: %v", err)
 	}
+
+	app := fiber.New()
 
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.Status(http.StatusOK).SendString("Working")
@@ -26,16 +26,15 @@ func initApp() *fiber.App {
 
 	app.Get("/manifest.json", func(c *fiber.Ctx) error {
 		manifest := types.StreamManifest{
-			ID:          "addon_id",
-			Version:     "1.0.0",
-			Name:        "GoDon",
+			ID:          "strem.go.beta",
 			Description: "Random Golang version on stremio Addon",
+			Name:        "GoDon",
 			Resources:   []string{"stream"},
+			Version:     "1.0.9",
 			Types:       []string{"movie", "series", "anime"},
-			IDPrefixes:  []string{"tt", "kitsu"},
-			Catalogs:    []string{},
 			Logo:        "https://upload.wikimedia.org/wikipedia/commons/2/23/Golang.png",
-			ContactEmail: "your-email@example.com", // Replace with your contact email
+			IdPrefixes:  []string{"tt", "kitsu"},
+			Catalogs:    []string{},
 		}
 
 		response, err := json.Marshal(manifest)
